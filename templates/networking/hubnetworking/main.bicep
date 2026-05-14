@@ -193,7 +193,10 @@ module resHubVirtualNetwork 'br/public:avm/res/network/virtual-network:0.7.2' = 
       dnsServers: hub.azureFirewallSettings.deployAzureFirewall && hub.privateDnsSettings.deployDnsPrivateResolver && hub.privateDnsSettings.deployPrivateDnsZones
         ? [firewallPrivateIpAddresses[i]]
         : (hub.?dnsServers ?? [])
-      ddosProtectionPlanResourceId: hub.?ddosProtectionPlanResourceId ?? null
+      // ddosProtectionPlanResourceId intentionally omitted — see comment block above + pattern L54.
+      // The previous patch (`?? null`) was insufficient: even passing literal null caused ARM to
+      // validate the DDoS plan name `ddos-alz-${location}` (defaulted in line ~403) at deploy time.
+      // Omitting the param entirely lets the AVM virtual-network module default to "no DDoS" cleanly.
       vnetEncryption: hub.?vnetEncryption ?? false
       vnetEncryptionEnforcement: hub.?vnetEncryptionEnforcement ?? 'AllowUnencrypted'
       subnets: [
@@ -392,22 +395,17 @@ module resUserSubnetsRouteTable 'br/public:avm/res/network/route-table:0.5.0' = 
 //=====================
 // Network Security
 //=====================
-module resDdosProtectionPlan 'br/public:avm/res/network/ddos-protection-plan:0.3.2' = [
-  for (hub, i) in hubNetworks: if (hub.ddosProtectionPlanSettings.deployDdosProtectionPlan) {
-    name: 'ddosPlan-${uniqueString(parHubNetworkingResourceGroupNamePrefix,hub.?ddosProtectionPlanResourceId ?? '',hub.location)}'
-    scope: resourceGroup(hubResourceGroupNames[i])
-    dependsOn: [
-      modHubNetworkingResourceGroups
-    ]
-    params: {
-      name: hub.?ddosProtectionPlanSettings.?name ?? 'ddos-alz-${hub.location}'
-      location: hub.?ddosProtectionPlanSettings.?location ?? hub.location
-      lock: hub.?ddosProtectionPlanSettings.?lock ?? parGlobalResourceLock
-      tags: hub.?ddosProtectionPlanSettings.?tags ?? parTags
-      enableTelemetry: parEnableTelemetry
-    }
-  }
-]
+// DDoS protection plan module deleted 2026-05-14 — see pattern L54 in
+// codelooks-com/azure-landing-zone CLAUDE.md. The conditional `for-if`
+// declaration here was still being compiled into the ARM template with
+// a deterministic resource-name calculation (`ddos-alz-${hub.location}`),
+// and ARM validated existence of that resource at deploy time regardless
+// of the `if` condition's value. Removing the module entirely lets
+// cost-minimised configs (deployDdosProtectionPlan: false) deploy cleanly.
+//
+// Customers who want a DDoS protection plan should deploy one separately
+// (own bicep module or `az network ddos-protection create`) and pass its
+// resource ID as `ddosProtectionPlanResourceId` on each hub config entry.
 
 module resFirewallPolicy 'br/public:avm/res/network/firewall-policy:0.3.4' = [
   for (hub, i) in hubNetworks: if (hub.azureFirewallSettings.deployAzureFirewall && empty(hub.?azureFirewallSettings.?firewallPolicyId)) {
