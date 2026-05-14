@@ -31,8 +31,16 @@ param landingZonesConfig = {
 
 // Only specify the parameters you want to override - others will use defaults from JSON files
 param parPolicyAssignmentParameterOverrides = {
+  // Enable-DDoS-VNET: forced to Disabled. Defaults to effect=Modify which would
+  // inject a `ddosProtectionPlan.id` reference to a never-created DDoS plan
+  // (we run with `deployDdosProtectionPlan: false` for cost — see pattern L54).
+  // The ddosPlan ref below is kept for "turn DDoS back on" optionality but is
+  // unused when effect is Disabled.
   'Enable-DDoS-VNET': {
     parameters: {
+      effect: {
+        value: 'Disabled'
+      }
       ddosPlan: {
         value: '/subscriptions/d744499a-fb71-4880-9d2e-853fec43ac29/resourceGroups/rg-codelooks-conn-${parLocations[0]}/providers/Microsoft.Network/ddosProtectionPlans/ddos-alz-${parLocations[0]}'
       }
