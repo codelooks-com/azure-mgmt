@@ -78,11 +78,18 @@ param hubNetworks = [
     bastionHostSettings: {
       deployBastion: false
     }
+    // VPN Gateway: AVM module pins the SKU type to VpnGw{1-5}AZ — Basic SKU
+    // (the only one within the £130/mo budget) is rejected at bicep-build time.
+    // We disable it via deployVpnGateway:false and deploy a Basic VPN Gateway
+    // via custom bicep in codelooks-com/azure-landing-zone. The schema still
+    // requires skuName/vpnMode etc (BCP035) — placeholder values below are
+    // ignored because deployVpnGateway:false. See AVM migration runbook
+    // 2026-05-14 hub-config incident + CLAUDE.md pattern L52.
     vpnGatewaySettings: {
-      deployVpnGateway: true
-      name: 'vgw-alz-${parLocations[0]}'
-      skuName: 'Basic'
-      vpnMode: 'singleInstance'
+      deployVpnGateway: false
+      name: 'vgw-alz-${parLocations[0]}-PLACEHOLDER-NOT-DEPLOYED'
+      skuName: 'VpnGw1AZ'
+      vpnMode: 'activePassiveNoBgp'
       vpnType: 'RouteBased'
       asn: 65515
     }
