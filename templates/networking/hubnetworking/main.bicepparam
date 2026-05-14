@@ -1,16 +1,24 @@
 using './main.bicep'
 
 // General Parameters
+// Single-region only. Original generated value had ['uksouth', ''] which broke
+// the bicep's per-location RG loop (BadRequest: location required) and added
+// a phantom dual-region hub. See AVM migration runbook 2026-05-14 hub-config
+// incident + CLAUDE.md pattern L52 (candidate).
 param parLocations = [
   'uksouth'
-  ''
 ]
 param parGlobalResourceLock = {
   name: 'GlobalResourceLock'
   kind: 'None'
   notes: 'This lock was created by the ALZ Bicep Accelerator.'
 }
-param parTags = {}
+param parTags = {
+  environment: 'prod'
+  workload: 'platform-connectivity'
+  managedBy: 'bicep-accelerator'
+  repo: 'codelooks-com/azure-mgmt'
+}
 param parEnableTelemetry = true
 
 // Resource Group Parameters
@@ -18,176 +26,81 @@ param parHubNetworkingResourceGroupNamePrefix = 'rg-codelooks-conn'
 param parDnsResourceGroupNamePrefix = 'rg-codelooks-dns'
 param parDnsPrivateResolverResourceGroupNamePrefix = 'rg-codelooks-dnspr'
 
-// Hub Networking Parameters
+// Hub Networking Parameters — single-hub, cost-disciplined config matching the
+// codelooks ALZ design spec (docs/superpowers/specs/2026-04-10-codelooks-alz-design.md).
+// Differences from accelerator default (which had everything on):
+//  - addressPrefixes 10.0.0.0/22 → 10.96.0.0/22 (matches Phase 1c hub)
+//  - Azure Firewall off (~£1000/mo savings; we deny-by-policy + NSG)
+//  - Bastion off (no need; access via VPN tunnel from OPNsense)
+//  - DDoS off (£2k/mo plan; not justified)
+//  - ExpressRoute Gateway off (no ExR circuit)
+//  - VPN Gateway SKU Basic (~£23/mo; matches Phase 1c, only SKU we can afford)
+//  - VPN mode singleInstance (Basic doesn't support BGP/active-active)
+//  - Peering off (single hub; no second region)
+//  - DNS Private Resolver on (matches Phase 1c corp-LZ validation test pattern L30)
 param hubNetworks = [
   {
     name: 'vnet-alz-${parLocations[0]}'
     location: parLocations[0]
     addressPrefixes: [
-      '10.0.0.0/22'
+      '10.96.0.0/22'
     ]
-    deployPeering: true
+    deployPeering: false
     dnsServers: []
-    peeringSettings: [
-      {
-        remoteVirtualNetworkName: 'vnet-alz-${parLocations[1]}'
-        allowForwardedTraffic: true
-        allowGatewayTransit: false
-        allowVirtualNetworkAccess: true
-        useRemoteGateways: false
-      }
-    ]
+    peeringSettings: []
     subnets: [
       {
-        name: 'AzureBastionSubnet'
-        addressPrefix: '10.0.0.64/26'
-      }
-      {
         name: 'GatewaySubnet'
-        addressPrefix: '10.0.0.128/27'
+        addressPrefix: '10.96.0.0/27'
       }
       {
-        name: 'AzureFirewallSubnet'
-        addressPrefix: '10.0.0.0/26'
+        name: 'snet-shared-services-01'
+        addressPrefix: '10.96.1.0/25'
       }
       {
-        name: 'AzureFirewallManagementSubnet'
-        addressPrefix: '10.0.0.192/26'
+        name: 'snet-pe-hub-01'
+        addressPrefix: '10.96.1.128/25'
       }
       {
         name: 'DNSPrivateResolverInboundSubnet'
-        addressPrefix: '10.0.0.160/28'
+        addressPrefix: '10.96.2.0/28'
         delegation: 'Microsoft.Network/dnsResolvers'
       }
       {
         name: 'DNSPrivateResolverOutboundSubnet'
-        addressPrefix: '10.0.0.176/28'
+        addressPrefix: '10.96.2.16/28'
         delegation: 'Microsoft.Network/dnsResolvers'
       }
     ]
     azureFirewallSettings: {
-      deployAzureFirewall: true
-      azureFirewallName: 'afw-alz-${parLocations[0]}'
-      azureSkuTier: 'Standard'
-      publicIPAddressObject: {
-        name: 'pip-afw-alz-${parLocations[0]}'
-      }
-      managementIPAddressObject: {
-        name: 'pip-afw-mgmt-alz-${parLocations[0]}'
-      }
+      deployAzureFirewall: false
     }
     bastionHostSettings: {
-      deployBastion: true
-      bastionHostSettingsName: 'bas-alz-${parLocations[0]}'
-      skuName: 'Standard'
+      deployBastion: false
     }
+    // VPN Gateway: AVM module pins the SKU type to VpnGw{1-5}AZ — Basic SKU
+    // (the only one within the £130/mo budget) is rejected at bicep-build time.
+    // We disable it via deployVpnGateway:false and deploy a Basic VPN Gateway
+    // via custom bicep in codelooks-com/azure-landing-zone. The schema still
+    // requires skuName/vpnMode etc (BCP035) — placeholder values below are
+    // ignored because deployVpnGateway:false. See AVM migration runbook
+    // 2026-05-14 hub-config incident + CLAUDE.md pattern L52.
     vpnGatewaySettings: {
-      deployVpnGateway: true
-      name: 'vgw-alz-${parLocations[0]}'
+      deployVpnGateway: false
+      name: 'vgw-alz-${parLocations[0]}-PLACEHOLDER-NOT-DEPLOYED'
       skuName: 'VpnGw1AZ'
-      vpnMode: 'activeActiveBgp'
+      vpnMode: 'activePassiveNoBgp'
       vpnType: 'RouteBased'
       asn: 65515
     }
     expressRouteGatewaySettings: {
-      deployExpressRouteGateway: true
-      name: 'ergw-alz-${parLocations[0]}'
+      deployExpressRouteGateway: false
     }
     privateDnsSettings: {
       deployPrivateDnsZones: true
       deployDnsPrivateResolver: true
       privateDnsResolverName: 'dnspr-alz-${parLocations[0]}'
       privateDnsZones: []
-    }
-    ddosProtectionPlanSettings: {
-      deployDdosProtectionPlan: true
-      name: 'ddos-alz-${parLocations[0]}'
-    }
-  }
-  {
-    name: 'vnet-alz-${parLocations[1]}'
-    location: parLocations[1]
-    addressPrefixes: [
-      '10.1.0.0/22'
-    ]
-    deployPeering: true
-    dnsServers: []
-    peeringSettings: [
-      {
-        remoteVirtualNetworkName: 'vnet-alz-${parLocations[0]}'
-        allowForwardedTraffic: true
-        allowGatewayTransit: false
-        allowVirtualNetworkAccess: true
-        useRemoteGateways: false
-      }
-    ]
-    subnets: [
-      {
-        name: 'AzureBastionSubnet'
-        addressPrefix: '10.1.0.64/26'
-      }
-      {
-        name: 'GatewaySubnet'
-        addressPrefix: '10.1.0.128/27'
-      }
-      {
-        name: 'AzureFirewallSubnet'
-        addressPrefix: '10.1.0.0/26'
-      }
-      {
-        name: 'AzureFirewallManagementSubnet'
-        addressPrefix: '10.1.0.192/26'
-      }
-      {
-        name: 'DNSPrivateResolverInboundSubnet'
-        addressPrefix: '10.1.0.160/28'
-        delegation: 'Microsoft.Network/dnsResolvers'
-      }
-      {
-        name: 'DNSPrivateResolverOutboundSubnet'
-        addressPrefix: '10.1.0.176/28'
-        delegation: 'Microsoft.Network/dnsResolvers'
-      }
-    ]
-    azureFirewallSettings: {
-      deployAzureFirewall: true
-      azureFirewallName: 'afw-alz-${parLocations[1]}'
-      azureSkuTier: 'Standard'
-      publicIPAddressObject: {
-        name: 'pip-afw-alz-${parLocations[1]}'
-      }
-      managementIPAddressObject: {
-        name: 'pip-afw-mgmt-alz-${parLocations[1]}'
-      }
-    }
-    bastionHostSettings: {
-      deployBastion: true
-      bastionHostSettingsName: 'bas-alz-${parLocations[1]}'
-      skuName: 'Standard'
-    }
-    vpnGatewaySettings: {
-      deployVpnGateway: true
-      name: 'vgw-alz-${parLocations[1]}'
-      skuName: 'VpnGw1AZ'
-      vpnMode: 'activeActiveBgp'
-      vpnType: 'RouteBased'
-      asn: 65515
-    }
-    expressRouteGatewaySettings: {
-      deployExpressRouteGateway: true
-      name: 'ergw-alz-${parLocations[1]}'
-    }
-    privateDnsSettings: {
-      deployPrivateDnsZones: true
-      deployDnsPrivateResolver: true
-      privateDnsResolverName: 'dnspr-alz-${parLocations[1]}'
-      privateDnsZones: [
-        'privatelink.{regionName}.azurecontainerapps.io'
-        'privatelink.{regionName}.kusto.windows.net'
-        'privatelink.{regionName}.azmk8s.io'
-        'privatelink.{regionName}.prometheus.monitor.azure.com'
-        'privatelink.{regionCode}.backup.windowsazure.com'
-      ]
     }
     ddosProtectionPlanSettings: {
       deployDdosProtectionPlan: false
