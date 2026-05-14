@@ -166,11 +166,25 @@ module resHubVirtualNetwork 'br/public:avm/res/network/virtual-network:0.7.2' = 
   for (hub, i) in hubNetworks: {
     name: 'vnet-${hub.name}-${uniqueString(parHubNetworkingResourceGroupNamePrefix, hub.location)}'
     scope: resourceGroup(hubResourceGroupNames[i])
+    // Patched 2026-05-14: original dependsOn + ddosProtectionPlanResourceId
+    // chain referenced resDdosProtectionPlan[i].?outputs.resourceId even when
+    // deployDdosProtectionPlan was false. The conditional `?` should short-
+    // circuit but the compiled ARM template still includes the resource ID
+    // reference (`reference()` to a never-deployed module), which ARM tries
+    // to resolve at deploy time — producing
+    // "Resource ddos-alz-uksouth not found" on cost-minimised configs.
+    //
+    // Fix: drop the auto-attach-to-deployed-plan chain. If a user wants the
+    // VNet attached to a DDoS plan, they pass `ddosProtectionPlanResourceId`
+    // explicitly in hub config (auto-attach to a separately-deployed plan
+    // via `deployDdosProtectionPlan: true` is sacrificed — easy to restore
+    // by setting `ddosProtectionPlanResourceId` to the deployed plan's ID
+    // in hub config).
+    //
+    // See codelooks-com/azure-landing-zone docs/runbooks/avm-migration-prestate.md
+    // ("2026-05-14 DDoS dangling reference" incident) and CLAUDE.md pattern L54.
     dependsOn: [
       modHubNetworkingResourceGroups[i]
-      ...(hub.ddosProtectionPlanSettings.deployDdosProtectionPlan
-        ? [resDdosProtectionPlan[i]]
-        : hubNetworks[0].ddosProtectionPlanSettings.deployDdosProtectionPlan ? [resDdosProtectionPlan[0]] : [])
     ]
     params: {
       name: hub.name
@@ -179,11 +193,7 @@ module resHubVirtualNetwork 'br/public:avm/res/network/virtual-network:0.7.2' = 
       dnsServers: hub.azureFirewallSettings.deployAzureFirewall && hub.privateDnsSettings.deployDnsPrivateResolver && hub.privateDnsSettings.deployPrivateDnsZones
         ? [firewallPrivateIpAddresses[i]]
         : (hub.?dnsServers ?? [])
-      ddosProtectionPlanResourceId: hub.?ddosProtectionPlanResourceId ?? (hub.ddosProtectionPlanSettings.deployDdosProtectionPlan
-        ? resDdosProtectionPlan[i].?outputs.resourceId
-        : hubNetworks[0].ddosProtectionPlanSettings.deployDdosProtectionPlan
-            ? resDdosProtectionPlan[0].?outputs.resourceId
-            : null)
+      ddosProtectionPlanResourceId: hub.?ddosProtectionPlanResourceId ?? null
       vnetEncryption: hub.?vnetEncryption ?? false
       vnetEncryptionEnforcement: hub.?vnetEncryptionEnforcement ?? 'AllowUnencrypted'
       subnets: [
