@@ -51,6 +51,14 @@ on:
         type: boolean
         default: true
 
+# Opt into Node 24 for all actions in this workflow (including those in the
+# called reusable workflow at azure-mgmt-templates). Suppresses Node 20
+# deprecation warnings until upstream actions (actions/checkout, azure/powershell)
+# publish Node-24-native versions. GitHub forces Node 24 from 2026-06-02 anyway;
+# this opt-in just removes the warning noise. See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   plan_and_apply:
     uses: codelooks-com/azure-mgmt-templates/.github/workflows/cd-template.yaml@main
