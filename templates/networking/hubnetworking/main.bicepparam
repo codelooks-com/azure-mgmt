@@ -56,10 +56,18 @@ param hubNetworks = [
       {
         name: 'snet-shared-services-01'
         addressPrefix: '10.96.1.0/25'
+        // NSG created out-of-band by `az network nsg create` (snag #16).
+        // Azure default rules: AllowVnetIn, AllowAzureLB, DenyAllIn,
+        // AllowVnetOut, AllowInternetOut, DenyAllOut. No custom rules.
+        networkSecurityGroupId: '/subscriptions/d744499a-fb71-4880-9d2e-853fec43ac29/resourceGroups/rg-codelooks-conn-uksouth/providers/Microsoft.Network/networkSecurityGroups/nsg-snet-shared-services-uksouth'
       }
       {
         name: 'snet-pe-hub-01'
         addressPrefix: '10.96.1.128/25'
+        // NSG created out-of-band by `az network nsg create` (snag #16).
+        // Default Azure NSG rules; spoke PEs reach this subnet via VNet
+        // peering and are allowed by AllowVnetIn.
+        networkSecurityGroupId: '/subscriptions/d744499a-fb71-4880-9d2e-853fec43ac29/resourceGroups/rg-codelooks-conn-uksouth/providers/Microsoft.Network/networkSecurityGroups/nsg-snet-pe-hub-uksouth'
       }
     ]
     azureFirewallSettings: {
