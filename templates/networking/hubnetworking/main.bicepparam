@@ -61,16 +61,6 @@ param hubNetworks = [
         name: 'snet-pe-hub-01'
         addressPrefix: '10.96.1.128/25'
       }
-      {
-        name: 'DNSPrivateResolverInboundSubnet'
-        addressPrefix: '10.96.2.0/28'
-        delegation: 'Microsoft.Network/dnsResolvers'
-      }
-      {
-        name: 'DNSPrivateResolverOutboundSubnet'
-        addressPrefix: '10.96.2.16/28'
-        delegation: 'Microsoft.Network/dnsResolvers'
-      }
     ]
     azureFirewallSettings: {
       deployAzureFirewall: false
@@ -98,7 +88,10 @@ param hubNetworks = [
     }
     privateDnsSettings: {
       deployPrivateDnsZones: true
-      deployDnsPrivateResolver: true
+      // DNS Private Resolver disabled — corp validation test torn down 2026-04-17.
+      // Re-enable when Phase 2 needs on-prem name resolution into Azure (see
+      // codelooks-com/azure-landing-zone snag #15 closure).
+      deployDnsPrivateResolver: false
       privateDnsResolverName: 'dnspr-alz-${parLocations[0]}'
       privateDnsZones: []
     }
